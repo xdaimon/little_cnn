@@ -4,3 +4,7 @@ CMakeScripts
 Makefile
 cmake_install.cmake
 install_manifest.txt
+
+*.idx1-ubyte
+
+*.idx3-ubyte
