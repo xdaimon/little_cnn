@@ -160,20 +160,20 @@ class nn {
 
 			if ( e > E-1 ) {
 				cout << "dcdfa:"  << endl << dcdfa  << endl << endl;
-				cout << "dfadfz:" << endl << dfadfz << endl << endl;
+				// cout << "dfadfz:" << endl << dfadfz << endl << endl;
 				cout << "dcdfz:"  << endl << dcdfz  << endl << endl;
-				cout << "dfzdfw:" << endl << dfzdfw << endl << endl;
-				cout << "dfzdfb:" << endl << dfzdfb << endl << endl;
+				// cout << "dfzdfw:" << endl << dfzdfw << endl << endl;
+				// cout << "dfzdfb:" << endl << dfzdfb << endl << endl;
 				cout << "dcdfw:"  << endl << dcdfw  << endl << endl;
-				cout << "dcdfb:"  << endl << dcdfb  << endl << endl;
+				// cout << "dcdfb:"  << endl << dcdfb  << endl << endl;
 				cout << "dfzdm:"  << endl << dfzdm  << endl << endl;
-				cout << "dmda:"   << endl << dmda   << endl << endl;
-				cout << "dadz:"   << endl << dadz   << endl << endl;
+				// cout << "dmda:"   << endl << dmda   << endl << endl;
+				// cout << "dadz:"   << endl << dadz   << endl << endl;
 				cout << "dcdz:"   << endl << dcdz   << endl << endl;
 				cout << "dzdw:"   << endl << dzdw   << endl << endl;
-				cout << "dzdb:"   << endl << dzdb   << endl << endl;
+				// cout << "dzdb:"   << endl << dzdb   << endl << endl;
 				cout << "dcdw:"   << endl << dcdw   << endl << endl;
-				cout << "dcdb:"   << endl << dcdb   << endl << endl;
+				// cout << "dcdb:"   << endl << dcdb   << endl << endl;
 			}
 			Plot::draw(e/float(E), c( fa, y ));
 		}
