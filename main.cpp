@@ -17,6 +17,8 @@ typedef int I;
 template<I rows, I cols>
 using M = Matrix<R, rows, cols>;
 
+#define subMatrix block
+
 // template<I is, I fs, I pws>
 class nn {
 	static constexpr I is = 28;      // is = image size
@@ -49,7 +51,7 @@ class nn {
 		Data validation;
 		load_data(train, test, validation);
 
-		M<is,is> x; for (I i = 0; i < is; ++i) x.row(i) = test.examples.block<is,1>(i*is,0).transpose();
+		M<is,is> x; for (I i = 0; i < is; ++i) x.row(i) = test.examples.subMatrix<is,1>(i*is,0).transpose();
 		M<fs,fs> w; for (I i = 0; i < fs; ++i) for (I j = 0; j < fs; ++j) w(i,j) = exp(-1/2.*(pow(i-fs/2,2) + pow(j-fs/2,2)));
 		R        b; b = 0;
 		M<as,as> z;
@@ -91,7 +93,7 @@ class nn {
 			// Compute the convolution
 			for (I i = 0; i < as; ++i)
 				for (I j = 0; j < as; ++j)
-					z(i,j) = (w.array() * x.block<fs,fs>(i,j).array()).sum() + b;
+					z(i,j) = (w.array() * x.subMatrix<fs,fs>(i,j).array()).sum() + b;
 
 			a = f( z );
 
@@ -100,7 +102,7 @@ class nn {
 			for (I i = 0; i < ps; ++i)
 				for (I j = 0; j < ps; ++j) {
 					I r,c;
-					m(i*ps+j,0) = a.block<pws,pws>(pws*i,pws*j).maxCoeff(&r, &c);
+					m(i*ps+j,0) = a.subMatrix<pws,pws>(pws*i,pws*j).maxCoeff(&r, &c);
 					dmda(i*ps+j,r*as+c) = 1;
 				}
 
@@ -119,7 +121,7 @@ class nn {
 
 				cout << "m" << endl;
 				for (I i = 0; i < ps; ++i)
-					cout << m.block<ps,1>(i*ps,0).transpose() << endl;
+					cout << m.subMatrix<ps,1>(i*ps,0).transpose() << endl;
 				cout << endl;
 
 				cout << "fw" << endl << fw << endl << endl;
@@ -142,10 +144,10 @@ class nn {
 			a = df( a );
 			dadz.setZero();
 			for (I i = 0; i < as; ++i)
-				dadz.block<as,as>(as*i,as*i) = a.row(i).asDiagonal();
+				dadz.subMatrix<as,as>(as*i,as*i) = a.row(i).asDiagonal();
 			for (I i = 0; i < as; ++i)
 				for (I j = 0; j < fs; ++j)
-					dzdw.block<as,fs>(as*i,fs*j) = x.block<as,fs>(j,i);
+					dzdw.subMatrix<as,fs>(as*i,fs*j) = x.subMatrix<as,fs>(j,i);
 
 			dzdb.setOnes();
 			dcdz = dcdfz * dfzdm * dmda * dadz;
@@ -153,10 +155,10 @@ class nn {
 			dcdw = dcdz * dzdw;
 			dcdb = dcdz * dzdb;
 			for (I i = 0; i < os; ++i)
-				fw.row(i) += -u * dcdfw.block<1,ps*ps>(0,i*ps*ps);
+				fw.row(i) += -u * dcdfw.subMatrix<1,ps*ps>(0,i*ps*ps);
 			fb += -u * dcdfb.transpose();
 			for (I i = 0; i < fs; ++i)
-				w.block<1,fs>(i,0) += -u * dcdw.block<1,fs>(0,i*fs);
+				w.subMatrix<1,fs>(i,0) += -u * dcdw.subMatrix<1,fs>(0,i*fs);
 			b += -u * dcdb;
 
 			if ( e > E-1 ) {
