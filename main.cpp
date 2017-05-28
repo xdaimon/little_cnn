@@ -14,25 +14,26 @@ using namespace Eigen;
 typedef float R;
 typedef int I;
 
-template<int rows, int cols>
-using M = Matrix<float, rows, cols>;
+template<I rows, I cols>
+using M = Matrix<R, rows, cols>;
 
-// template<int is, int fs, int pws>
+// template<I is, I fs, I pws>
 class nn {
-	static constexpr int is = 28;      // is = image size
-	static constexpr int fs = 5;       // fs = convolution filter size
-	static constexpr int pws = 2;      // pws = pool window size
-	static constexpr int as = is-fs+1; // as = convolution activation size
-	static constexpr int ps = as/pws;  // ps = pooled activation size
-	static constexpr int os = 10;      // os = output vector size
+	static constexpr I is = 28;      // is = image size
+	static constexpr I fs = 5;       // fs = convolution filter size
+	static constexpr I pws = 2;      // pws = pool window size
+	static constexpr I as = is-fs+1; // as = convolution activation size
+	static constexpr I ps = as/pws;  // ps = pooled activation size
+	static constexpr I os = 10;      // os = output vector size
 
-	template<int rows, int cols>
+	template<I rows, I cols>
 	static M<rows,cols> f(M<rows,cols> A) { return 1./(1.+(-A).array().exp()); }
-	template<int rows, int cols>
+	template<I rows, I cols>
 	static M<rows,cols> df(M<rows,cols> A) { return A.array()*(1-A.array()); }
-	template<int rows, int cols>
+
+	template<I rows, I cols>
 	static R c(M<rows,cols> A, M<rows,cols> Y) { return -(Y.array()*A.array().log()+(1-Y.array())*(1-A.array()).log()).sum(); }
-	template<int rows, int cols>
+	template<I rows, I cols>
 	static M<rows,cols> dc(M<rows,cols> A, M<rows,cols> Y) { return A-Y; }
 
 	public:
@@ -48,8 +49,8 @@ class nn {
 		Data validation;
 		load_data(train, test, validation);
 
-		M<is,is> x; for (int i = 0; i < is; ++i) x.row(i) = test.examples.block<is,1>(i*is,0).transpose();
-		M<fs,fs> w; w.setOnes();w*=1./w.cols(); for (int i = 0; i < fs; ++i) for (int j = 0; j < fs; ++j) w(i,j) = exp(-1./2.*(pow(i-fs/2,2) + pow(j-fs/2,2)));
+		M<is,is> x; for (I i = 0; i < is; ++i) x.row(i) = test.examples.block<is,1>(i*is,0).transpose();
+		M<fs,fs> w; for (I i = 0; i < fs; ++i) for (I j = 0; j < fs; ++j) w(i,j) = exp(-1/2.*(pow(i-fs/2,2) + pow(j-fs/2,2)));
 		R        b; b = 0;
 		M<as,as> z;
 		M<as,as> a;
@@ -88,18 +89,18 @@ class nn {
 		cout << "Initial w : " << w << endl << endl;
 		while ( e++ < E ) {
 			// Compute the convolution
-			for (int i = 0; i < as; ++i)
-				for (int j = 0; j < as; ++j)
+			for (I i = 0; i < as; ++i)
+				for (I j = 0; j < as; ++j)
 					z(i,j) = (w.array() * x.block<fs,fs>(i,j).array()).sum() + b;
 
 			a = f( z );
 
 			// Compute the pool and also the derivative of the pooling wrt its inputs
 			dmda.setZero();
-			for (int i = 0; i < ps; ++i)
-				for (int j = 0; j < ps; ++j) {
-					int r,c;
-					m(i*ps+j,0) = a.block<pws,pws>(pws*i,pws*j).maxCoeff(&r, &c); // why do we not use soft max?
+			for (I i = 0; i < ps; ++i)
+				for (I j = 0; j < ps; ++j) {
+					I r,c;
+					m(i*ps+j,0) = a.block<pws,pws>(pws*i,pws*j).maxCoeff(&r, &c);
 					dmda(i*ps+j,r*as+c) = 1;
 				}
 
@@ -117,7 +118,7 @@ class nn {
 				cout << "y" << endl << y << endl << endl;
 
 				cout << "m" << endl;
-				for (int i = 0; i < ps; ++i)
+				for (I i = 0; i < ps; ++i)
 					cout << m.block<ps,1>(i*ps,0).transpose() << endl;
 				cout << endl;
 
@@ -128,8 +129,8 @@ class nn {
 			}
 
 			dfzdfw.setZero();
-			for (int i = 0; i < os; ++i)
-				for (int jj = 0; jj < ps*ps; ++jj)
+			for (I i = 0; i < os; ++i)
+				for (I jj = 0; jj < ps*ps; ++jj)
 					dfzdfw(i,jj + i * ps*ps) = m(jj,0);
 			// dfzdfb.setIdentity(); // already computed
 			// dcdfz = dcdfa * dfadfz; // dfadfz cancelled by dc
@@ -140,10 +141,10 @@ class nn {
 			// dm/da already computed
 			a = df( a );
 			dadz.setZero();
-			for (int i = 0; i < as; ++i)
+			for (I i = 0; i < as; ++i)
 				dadz.block<as,as>(as*i,as*i) = a.row(i).asDiagonal();
-			for (int i = 0; i < as; ++i)
-				for (int j = 0; j < fs; ++j)
+			for (I i = 0; i < as; ++i)
+				for (I j = 0; j < fs; ++j)
 					dzdw.block<as,fs>(as*i,fs*j) = x.block<as,fs>(j,i);
 
 			dzdb.setOnes();
@@ -151,10 +152,10 @@ class nn {
 
 			dcdw = dcdz * dzdw;
 			dcdb = dcdz * dzdb;
-			for (int i = 0; i < os; ++i)
+			for (I i = 0; i < os; ++i)
 				fw.row(i) += -u * dcdfw.block<1,ps*ps>(0,i*ps*ps);
 			fb += -u * dcdfb.transpose();
-			for (int i = 0; i < fs; ++i)
+			for (I i = 0; i < fs; ++i)
 				w.block<1,fs>(i,0) += -u * dcdw.block<1,fs>(0,i*fs);
 			b += -u * dcdb;
 
@@ -175,7 +176,7 @@ class nn {
 				cout << "dcdw:"   << endl << dcdw   << endl << endl;
 				cout << "dcdb:"   << endl << dcdb   << endl << endl;
 			}
-			Plot::draw(e/float(E), c( fa, y ));
+			Plot::draw(e/R(E), c( fa, y ));
 		}
 		Plot::display();
 	}

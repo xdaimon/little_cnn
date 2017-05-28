@@ -8,3 +8,5 @@ install_manifest.txt
 *.idx1-ubyte
 
 *.idx3-ubyte
+
+build/
