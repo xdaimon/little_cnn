@@ -1,15 +1,4 @@
-#include <iostream>
-#include <iomanip>
-using std::cout;
-using std::endl;
-#include <cmath>
-
-#define EIGEN_STACK_ALLOCATION_LIMIT 0
-#include <eigen3/Eigen/Eigen>
-using namespace Eigen;
-
-#include "plot.h"
-#include "mnist_loader.h"
+#include "header.h"
 
 typedef float R;
 typedef int I;
@@ -42,7 +31,7 @@ class nn {
 	static void run() {
 		if(!Plot::init(400))
 			return;
-		I E = 400;
+		I E = 1200;
 		I e = 0;
 		R u = .1;
 
@@ -52,7 +41,7 @@ class nn {
 		load_data(train, test, validation);
 
 		M<is,is> x; for (I i = 0; i < is; ++i) x.row(i) = test.examples.subMatrix<is,1>(i*is,0).transpose();
-		M<fs,fs> w; for (I i = 0; i < fs; ++i) for (I j = 0; j < fs; ++j) w(i,j) = exp(-1/2.*(pow(i-fs/2,2) + pow(j-fs/2,2)));
+		M<fs,fs> w; for (I i = 0; i < fs; ++i) for (I j = 0; j < fs; ++j) w(i,j) = expf(-1/2.f*(powf(i-fs/2,2) + powf(j-fs/2,2)));
 		R        b; b = 0;
 		M<as,as> z;
 		M<as,as> a;
@@ -81,7 +70,7 @@ class nn {
 		M<1,as*as>     dcdz;
 
 		M<as*as,fs*fs> dzdw;
-		M<as*as,1>     dzdb;
+		M<as*as,1>     dzdb; dzdb.setOnes();
 		M<1,fs*fs>     dcdw;
 		R              dcdb;
 
@@ -94,22 +83,18 @@ class nn {
 			for (I i = 0; i < as; ++i)
 				for (I j = 0; j < as; ++j)
 					z(i,j) = (w.array() * x.subMatrix<fs,fs>(i,j).array()).sum() + b;
-
 			a = f( z );
-
 			// Compute the pool and also the derivative of the pooling wrt its inputs
 			dmda.setZero();
-			for (I i = 0; i < ps; ++i)
+			for (I i = 0; i < ps; ++i) {
+				I row,col;
 				for (I j = 0; j < ps; ++j) {
-					I r,c;
-					m(i*ps+j,0) = a.subMatrix<pws,pws>(pws*i,pws*j).maxCoeff(&r, &c);
-					dmda(i*ps+j,r*as+c) = 1;
+					m(i*ps+j,0) = a.subMatrix<pws,pws>(pws*i,pws*j).maxCoeff(&row, &col);
+					dmda(i*ps+j,(i*pws+row)*as+j*pws+col) = 1;
 				}
-
+			}
 			fz = fw * m + fb;
 			fa = f( fz );
-			dcdfa  = dc( fa, y ).transpose();
-			// dfadfz = df( fa ).asDiagonal();
 
 			if ( e > E-1 ) {
 				cout << "x" << endl << x << endl << endl;
@@ -130,6 +115,8 @@ class nn {
 				cout << "fa" << endl << fa << endl << endl;
 			}
 
+			dcdfa  = dc( fa, y ).transpose();
+			// dfadfz = df( fa ).asDiagonal();
 			dfzdfw.setZero();
 			for (I i = 0; i < os; ++i)
 				for (I jj = 0; jj < ps*ps; ++jj)
@@ -144,40 +131,53 @@ class nn {
 			a = df( a );
 			dadz.setZero();
 			for (I i = 0; i < as; ++i)
-				dadz.subMatrix<as,as>(as*i,as*i) = a.row(i).asDiagonal();
+				dadz.subMatrix<as,as>(as*i,as*i) += a.row(i).asDiagonal();
 			for (I i = 0; i < as; ++i)
 				for (I j = 0; j < fs; ++j)
 					dzdw.subMatrix<as,fs>(as*i,fs*j) = x.subMatrix<as,fs>(j,i);
-
-			dzdb.setOnes();
+			// dzdb.setOnes(); // already computed
 			dcdz = dcdfz * dfzdm * dmda * dadz;
-
 			dcdw = dcdz * dzdw;
 			dcdb = dcdz * dzdb;
+
+			// Update weights
 			for (I i = 0; i < os; ++i)
-				fw.row(i) += -u * dcdfw.subMatrix<1,ps*ps>(0,i*ps*ps);
+				fw.row(i) += -u * dcdfw.subMatrix<1,ps*ps>(0,i*ps*ps) - fw.row(i); // this insane regularization produces an interesting loss plot
 			fb += -u * dcdfb.transpose();
 			for (I i = 0; i < fs; ++i)
 				w.subMatrix<1,fs>(i,0) += -u * dcdw.subMatrix<1,fs>(0,i*fs);
 			b += -u * dcdb;
 
+			// The backpropagation still minimizes the network even with the following two lines uncommented,
+			// possibly due to the choice of activation function on the convolutional outputs
+			// w.setZero();
+			// b=0;
+
 			if ( e > E-1 ) {
 				cout << "dcdfa:"  << endl << dcdfa  << endl << endl;
 				// cout << "dfadfz:" << endl << dfadfz << endl << endl;
 				cout << "dcdfz:"  << endl << dcdfz  << endl << endl;
-				// cout << "dfzdfw:" << endl << dfzdfw << endl << endl;
+				cout << "dfzdfw:" << endl << dfzdfw << endl << endl;
 				// cout << "dfzdfb:" << endl << dfzdfb << endl << endl;
 				cout << "dcdfw:"  << endl << dcdfw  << endl << endl;
 				// cout << "dcdfb:"  << endl << dcdfb  << endl << endl;
 				cout << "dfzdm:"  << endl << dfzdm  << endl << endl;
-				// cout << "dmda:"   << endl << dmda   << endl << endl;
-				// cout << "dadz:"   << endl << dadz   << endl << endl;
+				cout << "dmda:"   << endl << dmda   << endl << endl;
+				cout << "dadz:"   << endl << dadz   << endl << endl;
 				cout << "dcdz:"   << endl << dcdz   << endl << endl;
 				cout << "dzdw:"   << endl << dzdw   << endl << endl;
 				// cout << "dzdb:"   << endl << dzdb   << endl << endl;
 				cout << "dcdw:"   << endl << dcdw   << endl << endl;
 				// cout << "dcdb:"   << endl << dcdb   << endl << endl;
+
+				for (I i = 0; i < dmda.cols(); ++i)
+					cout << dmda.col(i).sum() << " "; // will sum to at most one
+				cout << endl << endl;
+				for (I i = 0; i < dmda.rows(); ++i)
+					cout << dmda.row(i).sum() << " "; // will sum to one
+				cout << endl;
 			}
+
 			Plot::draw(e/R(E), c( fa, y ));
 		}
 		Plot::display();
