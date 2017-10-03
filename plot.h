@@ -5,9 +5,17 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+struct Color {
+	unsigned char r;
+	unsigned char g;
+	unsigned char b;
+};
+const struct Color RED = {255, 0, 0};
+const struct Color BLUE = {0, 0, 255};
+const struct Color WHITE = {255, 255, 255};
 class Plot {
 	public:
-		static void draw ( float x, float y );
+		static void draw ( float x, float y, struct Color);
 		static bool init ( int width, int height );
 		static bool init ( int square_width );
 		static void display ( );
@@ -176,15 +184,15 @@ void Plot::display() {
 		glfwPollEvents();
 	}
 }
-void Plot::draw(float _x, float _y) {
+void Plot::draw(float _x, float _y, struct Color c) {
 	int x = _x*wwidth;
 	int y = _y*wwidth;
 	if (x < 0) x = 0;
 	if (x >= wwidth) x = wwidth-1;
 	if (y < 0) y = 0;
 	if (y >= wheight) y = wheight-1;
-	pixel_store[4*(y*wwidth+x)+0] = 255;
-	pixel_store[4*(y*wwidth+x)+1] = 255;
-	pixel_store[4*(y*wwidth+x)+2] = 255;
+	pixel_store[4*(y*wwidth+x)+0] = c.r;
+	pixel_store[4*(y*wwidth+x)+1] = c.g;
+	pixel_store[4*(y*wwidth+x)+2] = c.b;
 	pixel_store[4*(y*wwidth+x)+3] = 255;
 }
