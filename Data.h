@@ -3,6 +3,6 @@
 class Data
 {
 	public:
-		Eigen::MatrixXf examples;
+		Eigen::MatrixXd examples;
 		Eigen::VectorXi labels;
 };

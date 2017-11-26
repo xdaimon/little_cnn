@@ -40,10 +40,10 @@ The labels values range from 0 to 9
  */ // clang-format on
 
 void load_data(Data& train_data, Data& test_data, Data& validation_data) {
-	const char* train_img_file = "../train-images.idx3-ubyte";
-	const char* train_lbl_file = "../train-labels.idx1-ubyte";
-	const char* test_img_file = "../t10k-images.idx3-ubyte";
-	const char* test_lbl_file = "../t10k-labels.idx1-ubyte";
+	const char* train_img_file = "train-images.idx3-ubyte";
+	const char* train_lbl_file = "train-labels.idx1-ubyte";
+	const char* test_img_file = "t10k-images.idx3-ubyte";
+	const char* test_lbl_file = "t10k-labels.idx1-ubyte";
 
 	// train_data gets 50000 images from the first img file
 	// validation_data gets 10000 images from the first img file
@@ -60,8 +60,8 @@ void load_data(Data& train_data, Data& test_data, Data& validation_data) {
 
 	// Train/Validation Images
 	read_file(train_img_file, 16);
-	train_data.examples = MatrixXf::Zero(28 * 28, 50000);
-	validation_data.examples = MatrixXf::Zero(28 * 28, 10000);
+	train_data.examples = MatrixXd::Zero(28 * 28, 50000);
+	validation_data.examples = MatrixXd::Zero(28 * 28, 10000);
 	for (int i = 0; i < 50000; ++i)
 		for (int j = 0; j < 28 * 28; ++j)
 			train_data.examples(j, i) = file[j + i * 28 * 28] / 256.;
@@ -80,7 +80,7 @@ void load_data(Data& train_data, Data& test_data, Data& validation_data) {
 
 	// Test Images
 	read_file(test_img_file, 16);
-	test_data.examples = MatrixXf::Zero(28 * 28, 10000);
+	test_data.examples = MatrixXd::Zero(28 * 28, 10000);
 	for (int i = 0; i < 10000; ++i)
 		for (int j = 0; j < 28 * 28; ++j)
 			test_data.examples(j, i) = file[j + i * 28 * 28] / 256.;

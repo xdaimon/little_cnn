@@ -8,5 +8,6 @@ using std::endl;
 #include <eigen3/Eigen/Eigen>
 using namespace Eigen;
 
-#include "plot.h"
+// #include "plot.h"
+
 #include "mnist_loader.h"
