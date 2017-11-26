@@ -12,3 +12,15 @@ install_manifest.txt
 build/
 
 \.idea/
+
+\.vs/cnn/v15/
+
+*.json
+
+Debug/
+
+cnn\.vcxproj
+
+cnn\.sln
+
+cnn\.vcxproj\.filters
