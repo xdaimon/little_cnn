@@ -1,43 +1,54 @@
-#include "header.h"
-#include <vector>
-// #include <png++/png.hpp>
+#include <iostream>
+using std::cout; using std::endl;
+#include <chrono>
 
-typedef double R;
-typedef int I;
+#include "common.h"
+#include "mnist_loader.h"
+
+using R = double; // real
+using I = int;    // integer
 
 template<I rows, I cols>
 using M = Matrix<R, rows, cols>;
+template<I sz>
+using MD = DiagonalMatrix<R, sz>;
+template<I cols>
+using V = Matrix<R, 1, cols>;
 
-#define subMatrix block
+// gradient check
+#define GC
 
-// Cheap gradient check
-// #define GC
-
-// template<I is, I fs, I pws>
 class cnn {
-	static constexpr I is = 28;      // is = image size
-	static constexpr I fs = 5;       // fs = convolution filter size, must be odd
-	static constexpr I pws = 2;      // pws = pool window size, must be 2
-	static constexpr I as = is-fs+1; // as = convolution activation size
-	static constexpr I ps = as/pws;  // ps = pooled activation size
-	static constexpr I os = 10;      // os = output vector size
+	static constexpr I is = 28;      // image size
+	static constexpr I fs = 5;       // convolution filter size, must be odd
+	static constexpr I nf = 5;       // # of conv filters, # of feature maps
+	static constexpr I pws = 2;      // pool window size, must be 2
+	static constexpr I as = is-fs+1; // convolution activation size
+	static constexpr I ps = as/pws;  // pooled activation size
+	static constexpr I os = 10;      // output vector size
 
-	template<I rows, I cols>
-	static M<rows, cols> f(M<rows, cols>& A) { return 1./(1.+(-A).array().exp()); }
-	template<I rows, I cols>
-	static M<rows, cols> df(M<rows, cols>& A) { return A.array()*(1-A.array()); }
+	template<typename T>
+	static T f(const T& z) { return 1./(1.+(-z).array().exp()); }
+	template<typename T>
+	static T df(const T& A) {
+		const auto& o = A.array();
+		return o*(1-o);
+	}
 
-	template<I rows, I cols>
-	static R c(M<rows, cols>& A, M<rows, cols>& Y) { return -(Y.array()*A.array().log()+(1-Y.array())*(1-A.array()).log()).sum(); }
-	template<I rows, I cols>
-	static M<rows, cols> dc(M<rows, cols>& A, M<rows, cols>& Y) { return A-Y; }
+	template<typename T>
+	static R c(const T& A, const T& Y) {
+		const auto& y = Y.array();
+		const auto& a = A.array();
+		return -((y*a.log() + (1 - y)*(1 - a).log()).sum());
+	}
+	template<typename T>
+	static T dc(const T& A, const T& Y) { return A-Y; }
 
 	public:
 	static void run() {
-		I E = 1000;
 		I e = 0;
-		R u = .04;
-		R lambda = .001;
+		const R u = .02;
+		const R lambda = .001;
 
 		Data test;
 		Data train;
@@ -45,20 +56,15 @@ class cnn {
 		load_data(train, test, validation);
 
 		M<is,is> x;
-		M<fs,fs> w[os];
-		// TODO Initialize to range [-1, 1] ?
-		for (I i = 0; i < fs; ++i)
-			for (I j = 0; j < fs; ++j)
-				w[0](i,j) = exp(-(pow(i-fs/2., 2) + pow(j-fs/2., 2)));
-		for (I i = 1; i < os; ++i) w[i] = w[0];
-
-		R b[os];
-		for (I i = 1; i < os; ++i) b[i] = 0;
+		M<fs,fs> w[nf];
+		for (I i = 0; i < nf; ++i)
+			w[i] = M<fs, fs>::Random()/std::sqrt(fs*fs);
+		R b[nf]; for (I i = 1; i < nf; ++i) b[i] = 0;
 		M<as,as> z;
-		M<as,as> a;
+		M<as,as> a[nf];
 		M<os,1>  y; y.setZero();
 
-		M<ps*ps,1>      m;
+		M<ps*ps,1>      m[nf];
 		M<os,ps*ps>    fw;
 		for (I i = 0; i < os; ++i)
 			for (I j = 0; j < ps*ps; ++j)
@@ -69,7 +75,7 @@ class cnn {
 
 		// jacobians
 		M<1,os>        dcdfa;
-		M<os,os>       dfadfz; // diagonal
+		MD<os>        dfadfz;
 		M<1,os>        dcdfz;
 
 		M<os,os*ps*ps> dfzdfw;
@@ -79,21 +85,22 @@ class cnn {
 		M<1,os>        dcdfb;
 
 		M<os,ps*ps>    dfzdm;
-		M<ps*ps,as*as> dmda; // ones and zeros
-		M<as*as,as*as> dadz; dadz.setZero(); // diagonal
-		M<1,as*as>     dcdz;
+		M<ps*ps,as*as> dmda[nf]; // ones and zeros
+		MD<as*as>      dadz[nf]; for (I k = 0; k < nf; ++k) dadz[k].setZero();
+		M<ps*ps,as*as> dmdz[nf];
+		M<1,as*as>     dcdz[nf];
 
 		M<as*as,fs*fs> dzdw;
 		M<as*as,1>     dzdb; dzdb.setOnes();
-		M<1,fs*fs>     dcdw;
-		R              dcdb;
+		M<1,fs*fs>     dcdw[nf];
+		R              dcdb[nf];
 
 		// w z a m fw fz fa c
 
 		auto LOG = [&]() {
 			// Nodes
 			// cout << "x" << endl << x << endl << endl;
-			for (I i = 0; i < os; ++i)
+			for (I i = 0; i < nf; ++i)
 				cout << "w["<<i<<"]" << endl << w[i] << endl << endl;
 			// for (I i = 0; i < os; ++i)
 			// 	cout << "b[i]" << endl << b[i] << endl << endl;
@@ -138,175 +145,169 @@ class cnn {
 
 		// TODO recompute all gradients on paper
 
-		// label for example from loaded img file
-		I label = 0;
-
-		auto forward = [&](I my_label) {
-			// Compute the convolution
-			for (I i = 0; i < as; ++i)
-				for (I j = 0; j < as; ++j)
-					z(i,j) = (w[my_label].array() * x.subMatrix<fs,fs>(i,j).array()).sum() + b[my_label];
-			a = f(z);
+		auto forward = [&]() {
+			// Compute the convolution for each feature map
+			for (I k = 0; k < nf; ++k) {
+				for (I i = 0; i < as; ++i)
+					for (I j = 0; j < as; ++j)
+						z(i,j) = (w[k].array() * x.block<fs,fs>(i,j).array()).sum() + b[k];
+				a[k] = f(z);
+			}
 
 			// Compute the pool and also the derivative of the pooling wrt its inputs
-			dmda.setZero();
-			for (I i = 0; i < ps; ++i) {
-				I row,col;
-				for (I j = 0; j < ps; ++j) {
-					m(i*ps+j,0) = a.subMatrix<pws,pws>(pws*i,pws*j).maxCoeff(&row, &col);
-					dmda(i*ps+j,(i*pws+row)*as+j*pws+col) = 1;
+			for (I k = 0; k < nf; ++k) {
+				dmda[k].setZero();
+				for (I i = 0; i < ps; ++i) {
+					I row,col;
+					for (I j = 0; j < ps; ++j) {
+						m[k](i*ps+j,0) = a[k].block<pws,pws>(pws*i,pws*j).maxCoeff(&row, &col);
+						dmda[k](i*ps+j,(i*pws+row)*as+j*pws+col) = 1;
+					}
 				}
 			}
 
 			// Compute the fully connected network
-			fz = fw * m + fb;
+			fz.setZero();
+			for (I i = 0; i < nf; ++i)
+				fz += fw * m[i];
+			fz += fb;
 			fa = f(fz);
 		};
 
 		auto grad_check = [&]() {
-			const float eps = 0.00001;
+			const float eps = 0.00001f;
 			// double cost = c(fa,y);
 			double cost1, cost2;
 			double g;
 
-			// //dcdb
-			// b[label] += eps; // M<os,1>
-			// forward(label);
-			// cost1 = c(fa,y);
-			// b[label] -= 2.*eps;
-			// forward(label);
-			// cost2 = c(fa,y);
-			// b[label] += eps;
-			// g = (cost1-cost2)/(2*eps);
-			// cout << "dcdb: " << dcdb << endl;
-			// cout << "  dq: " << g << endl;
-
-			// //dcdw
-			// w[label](2,2) += eps; // M<fs,fs>
-			// forward(label);
-			// cost1 = c(fa,y);
-			// // g = (c(fa,y)-cost) / eps;
-			// w[label](2,2) -= 2*eps;
-			// forward(label);
-			// cost2 = c(fa,y);
-			// w[label](2,2) += eps;
-			// g = (cost1-cost2) / (2*eps);
-			// cout << "dcdw(...): " << dcdw(0,2*fs + 2) << endl;
-			// cout << "       dq: " << g << endl;
-
-			//dcdfb
-			fb(4) += eps;
-			forward(label);
+			//dcdb
+			b[3] += eps;
+			forward();
 			cost1 = c(fa,y);
-			fb(4) -= 2.*eps;
-			forward(label);
+			b[3] -= 2.*eps;
+			forward();
 			cost2 = c(fa,y);
-			fb(4) += eps;
-			g = (cost1 - cost2)/ (2*eps);
-			cout << "dcdfb: " << dcdfb(4) << endl; // M<1,os*ps*ps>
-			cout << "   dq: " << g << endl;
-
-			// //dcdfw
-			// fw(2,10) += eps; // M<os,ps*ps>
-			// forward(label);
-			// g = (c(fa,y)-cost) / eps;
-			// fw(2,10) -= eps;
-			// cout << "dcdfw(...): " << dcdfw(0,2*ps*ps + 10) << endl; // M<1,os*ps*ps>
-			// cout << "        dq: " << g << endl;
-
+			b[3] += eps;
+			g = (cost1-cost2)/(2*eps);
+			cout << "dcdb   : " << dcdb[3] << endl;
+			cout << "diffquo: " << g << endl;
 		};
 
 		cout.precision(20);
-		while ( e++ < E ) {
+		auto start = std::chrono::steady_clock::now();
+		while (++e < 1000) {
 
 			for (I T = 0; T < 13; ++T) {
 				I example = rand() % train.labels.size();
 				// Copy data from test matrix to network input matrix
 				for (I i = 0; i < is; ++i)
-					x.row(i) = train.examples.subMatrix<is,1>(i*is,example).transpose();
-				y(label) = 0;
-				label = train.labels(example);
-				y(label) = 1;
-				if (y.sum() != 1) {
-					cout << "error label vector incorrect" << endl;
-					exit(0);
-				}
+					x.row(i) = train.examples.block<is,1>(i*is,example).transpose();
+				y.setZero();
+				y(train.labels(example)) = 1;
 
-				forward(label);
+				forward();
+
+
+
 
 				// Compute jacobians
-				dcdfa = dc( fa, y ).transpose();
+
+
+
+				// FULLY CONNECTED LAYER DERIVATIVE
+				dcdfa = dc(fa, y).transpose();
 				// dfadfz = df( fa ).asDiagonal();
 				dfzdfw.setZero();
-				for (I i = 0; i < os; ++i) // the ith row of fz is sensitive to elements in the ith row of fw
-					for (I j = 0; j < ps*ps; ++j) // but not to elements in other rows of fw
-						dfzdfw(i,j + i * ps*ps) = m(j,0);
+				for (I k = 0; k < nf; ++k)
+					for (I i = 0; i < os; ++i) // the ith row of fz is sensitive to elements in the ith row of fw
+						for (I j = 0; j < ps*ps; ++j) // but not to elements in other rows of fw
+							dfzdfw(i,j + i * ps*ps) += m[k](j,0);
 				// dfzdfb.setIdentity(); // already computed
 				// dcdfz = dcdfa * dfadfz; // dfadfz cancelled by dc
 				dcdfz = dcdfa;
-				dcdfw = dcdfz * dfzdfw;
+				dcdfw = dcdfz * dfzdfw; // This could be reduced to (dcdfz.T)*(m.T) which would produce a dcdfw that has the same size as fw
 				dcdfb = dcdfz * dfzdfb;
 				dfzdm = fw;
-				// dmda already computed
-				a = df( a );
-				for (I i = 0; i < as; ++i)
-					dadz.subMatrix<as,as>(as*i,as*i) = a.row(i).asDiagonal();
-				for (I i = 0; i < as*as; ++i) {
-					I z_row = i / as;
+
+
+
+
+				// MAX POOL LAYER DERIVATIVE
+				// dmda[k] computed during forward pass
+
+
+
+
+				// CONVOLUTIONAL LAYER DERIVATIVE
+				for (I k = 0; k < nf; ++k)
+					a[k] = df(a[k]);
+				for (I k = 0; k < nf; ++k)
+					for (I i = 0; i < as; ++i)
+						dadz[k].diagonal().transpose().block<1,as>(0,i*as) = a[k].row(i);
+				for (I i = 0; i < as*as; ++i) { // Build the jacobian of the convolution wrt the filter parameters
+					I z_row = i / as;           // Each filter has the same input so dzdw is the same for each filter
 					I z_col = i % as;
+					const auto &submat = x.block<fs, fs>(z_row, z_col);
 					for (I j = 0; j < fs*fs; ++j) {
 						I w_row = j / fs;
 						I w_col = j % fs;
-						// z(i,j) = (w[label].array() * x.subMatrix<fs,fs>(i,j).array()).sum() + b[label];
-						dzdw(i, j) = (x.subMatrix<fs,fs>(z_row, z_col))(w_row, w_col);
+						dzdw(i, j) = submat(w_row, w_col);
 					}
 				}
 				// dzdb.setOnes(); // already computed
-				dcdz = dcdfz * dfzdm * dmda * dadz;
-				dcdw = dcdz * dzdw;
-				dcdb = dcdz * dzdb;
+				for (I k = 0; k < nf; ++k) {
+					dcdz[k] = dcdfz * dfzdm * dmda[k] * dadz[k];
+					dcdw[k] = dcdz[k] * dzdw;
+					dcdb[k] = dcdz[k] * dzdb;
+				}
 
-				// Compute cheap gradient check
+
+
+
+				// Compute gradient check
 				#ifdef GC
-				if (example == 50) {
+				if (T == 0 && e % 50==0) {
 					grad_check();
 				}
 				#endif
 
-				// Update weights
-				for (I i = 0; i < os; ++i) {
-					// fw.row(i) += -u * dcdfw.subMatrix<1,ps*ps>(0,i*ps*ps) - lambda*fw.row(i);
-					fw.row(i) += -u * dcdfw.subMatrix<1,ps*ps>(0,i*ps*ps);
-				}
+
+
+				// UPDATE WEIGHTS
+				for (I i = 0; i < os; ++i)
+					fw.row(i) += -u * dcdfw.block<1,ps*ps>(0,i*ps*ps);
 				fb += -u * dcdfb.transpose();
-				for (I i = 0; i < fs; ++i) {
-					// w[label].subMatrix<1,fs>(i,0) += -u * dcdw.subMatrix<1,fs>(0,i*fs) - lambda*w[label].subMatrix<1,fs>(i,0);
-					w[label].row(i) += -u * dcdw.subMatrix<1,fs>(0,i*fs);
+
+				for (I k = 0; k < nf; ++k) {
+					for (I i = 0; i < fs; ++i)
+						w[k].row(i) += -u * dcdw[k].block<1,fs>(0,i*fs);
+					b[k] += -u * dcdb[k];
 				}
-				b[label] += -u * dcdb;
+
 			}
 
-			cout << "Epoch " << e << endl;
 			if (e % 50 == 0) {
 				double acc = 0.;
 				I itters = test.labels.size();
 				for (I example = 0; example < itters; ++example) {
 					for (I i = 0; i < is; ++i)
-						x.row(i) = test.examples.subMatrix<is,1>(i*is,example).transpose();
-					I my_label = test.labels(example); // dont use label variable
-					
-					forward(my_label);
+						x.row(i) = test.examples.block<is,1>(i*is,example).transpose();
+					forward();
 					I indx;
 					fa.maxCoeff(&indx);
-					if (indx == my_label) {
+					if (indx == test.labels(example))
 						acc += 1.;
-					}
 				}
 				acc /= R(itters);
+				cout << "Epoch " << e << endl;
 				cout << "Accuracy: " << acc << endl;
 			}
 		}
+		cout << (std::chrono::steady_clock::now() - start).count() / 1e9 << endl;
 		LOG();
+		I XX;
+		std::cin >> XX;
+		cout << XX * 3 << endl;
 	}
 };
 

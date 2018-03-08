@@ -1,14 +1,13 @@
-#include <eigen3/Eigen/Eigen>
+#include <Eigen>
 #include "mnist_loader.h"
 using namespace Eigen;
 
 #include <iostream>
+using std::cout; using std::endl;
 #include <fstream>
 #include <iterator>
 #include <algorithm>
 
-using std::cout;
-using std::endl;
 using std::vector;
 
 // #include <png++/png.hpp>
@@ -52,6 +51,10 @@ void load_data(Data& train_data, Data& test_data, Data& validation_data) {
 	vector<unsigned char> file;
 	auto read_file = [&file](const char* path, int offset) {
 		std::ifstream fi(path, std::ios::binary);
+		if (!fi.is_open()) {
+			cout << "MNIST data file was not found" << endl;
+			exit(1);
+		}
 		fi.seekg(offset, std::ios::beg);
 		fi >> std::noskipws;
 		std::istream_iterator<unsigned char> start(fi), end;

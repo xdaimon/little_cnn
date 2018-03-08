@@ -19,8 +19,11 @@ build/
 
 Debug/
 
-cnn\.vcxproj
+little_cnn\.vcxproj\.filters
 
-cnn\.sln
+x64
 
-cnn\.vcxproj\.filters
+\.vs
+
+little_cnn\.vcxproj\.user
+little_cnn\.vcxproj\.filter
