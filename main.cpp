@@ -1,6 +1,5 @@
 #include <iostream>
 using std::cout; using std::endl;
-#include <chrono>
 
 #include "common.h"
 #include "mnist_loader.h"
@@ -12,28 +11,35 @@ template<I rows, I cols>
 using M = Matrix<R, rows, cols>;
 template<I sz>
 using MD = DiagonalMatrix<R, sz>;
-template<I cols>
-using V = Matrix<R, 1, cols>;
+template<I rows, I cols>
+using View = Map<Matrix<R, rows, cols>>;
 
 // gradient check
 #define GC
 
+/*
+The jacobian of fog(x) wrt x is J[fog](x) = J[f](g(x)) * J[g](x)
+The component wise description of this matrix multiplication is
+df(g(x))_i/dx_j = sum_k df(g(x))_i/dg(x)_k * dg(x)_k/dx_j
+dfog(x)/dx    = a;
+dfog(x)/dg(x) = b;
+dg(x)/dx      = c;
+a_ij = sum_k( b_ik * c_kj )
+*/
+
 class cnn {
 	static constexpr I is = 28;      // image size
 	static constexpr I fs = 5;       // convolution filter size, must be odd
-	static constexpr I nf = 5;       // # of conv filters, # of feature maps
+	static constexpr I nf = 10;      // # of conv filters, # of feature maps
 	static constexpr I pws = 2;      // pool window size, must be 2
 	static constexpr I as = is-fs+1; // convolution activation size
 	static constexpr I ps = as/pws;  // pooled activation size
 	static constexpr I os = 10;      // output vector size
 
 	template<typename T>
-	static T f(const T& z) { return 1./(1.+(-z).array().exp()); }
+	static T f(const T& A) { return 1./(1.+(-A).array().exp()); }
 	template<typename T>
-	static T df(const T& A) {
-		const auto& o = A.array();
-		return o*(1-o);
-	}
+	static T df(const T& A) { return A.array() * (1 - A.array()); }
 
 	template<typename T>
 	static R c(const T& A, const T& Y) {
@@ -46,102 +52,46 @@ class cnn {
 
 	public:
 	static void run() {
-		I e = 0;
-		const R u = .02;
-		const R lambda = .001;
-
-		Data test;
-		Data train;
-		Data validation;
+		Data test, train, validation;
 		load_data(train, test, validation);
 
-		M<is,is> x;
-		M<fs,fs> w[nf];
-		for (I i = 0; i < nf; ++i)
-			w[i] = M<fs, fs>::Random()/std::sqrt(fs*fs);
-		R b[nf]; for (I i = 1; i < nf; ++i) b[i] = 0;
-		M<as,as> z;
-		M<as,as> a[nf];
-		M<os,1>  y; y.setZero();
+		M<is,is>       x;
 
-		M<ps*ps,1>      m[nf];
-		M<os,ps*ps>    fw;
-		for (I i = 0; i < os; ++i)
-			for (I j = 0; j < ps*ps; ++j)
-				fw(i,j) = exp(-(pow((i*2.f-os)/float(os), 2) + pow((j*2.f-ps*ps)/float(ps*ps), 2))) / (ps*ps);
+		// Conv layer variables
+		M<fs,fs>       w[nf]; for (auto &X : w) X = M<fs, fs>::Random()/double(fs*fs);
+		R              b[nf]; for (auto &X : b) X = rand() / double(RAND_MAX);
+		M<as,as>       z;
+		M<as,as>       a[nf];
+		M<ps*ps,1>     m;
+
+		M<os,ps*ps>    dfzdm;
+		M<ps*ps,as*as> dmda[nf]; // ones and zeros, contains ps*ps ones
+		MD<as*as>      dadz[nf];
+		M<1,ps*ps>     dcdm;
+		M<1,as*as>     dcdz[nf];
+
+		M<as*as,fs*fs> dzdw;
+		M<1,fs*fs>     dcdw[nf];
+		R              dcdb[nf];
+
+		// FC layer variables
+		M<os,ps*ps>    fw = M<os, ps*ps>::Random() / double(ps*ps);
 		M<os,1>        fb; fb.setZero();
 		M<os,1>        fz;
 		M<os,1>        fa;
+		M<os,1>        y;
 
-		// jacobians
 		M<1,os>        dcdfa;
-		MD<os>        dfadfz;
+		MD<os>         dfadfz;
 		M<1,os>        dcdfz;
 
 		M<os,os*ps*ps> dfzdfw;
-		M<os,os>       dfzdfb; dfzdfb.setIdentity();
 
 		M<1,os*ps*ps>  dcdfw;
 		M<1,os>        dcdfb;
 
-		M<os,ps*ps>    dfzdm;
-		M<ps*ps,as*as> dmda[nf]; // ones and zeros
-		MD<as*as>      dadz[nf]; for (I k = 0; k < nf; ++k) dadz[k].setZero();
-		M<ps*ps,as*as> dmdz[nf];
-		M<1,as*as>     dcdz[nf];
-
-		M<as*as,fs*fs> dzdw;
-		M<as*as,1>     dzdb; dzdb.setOnes();
-		M<1,fs*fs>     dcdw[nf];
-		R              dcdb[nf];
-
 		// w z a m fw fz fa c
 
-		auto LOG = [&]() {
-			// Nodes
-			// cout << "x" << endl << x << endl << endl;
-			for (I i = 0; i < nf; ++i)
-				cout << "w["<<i<<"]" << endl << w[i] << endl << endl;
-			// for (I i = 0; i < os; ++i)
-			// 	cout << "b[i]" << endl << b[i] << endl << endl;
-			// cout << "z" << endl << z << endl << endl;
-			// cout << "a" << endl << a << endl << endl;
-			// cout << "y" << endl << y << endl << endl;
-			//
-			// cout << "m" << endl;
-			// for (I i = 0; i < ps; ++i)
-			// 	cout << m.subMatrix<ps,1>(i*ps,0).transpose() << endl;
-			// cout << endl;
-			//
-			// cout << "fw" << endl << fw << endl << endl;
-			// cout << "fb" << endl << fb << endl << endl;
-			// cout << "fz" << endl << fz << endl << endl;
-			// cout << "fa" << endl << fa << endl << endl;
-			//
-			// // Gradients
-			//
-			// cout << "dcdfa:"  << endl << dcdfa  << endl << endl;
-			// // cout << "dfadfz:" << endl << dfadfz << endl << endl;
-			// cout << "dcdfz:"  << endl << dcdfz  << endl << endl;
-			// cout << "dfzdfw:" << endl << dfzdfw << endl << endl;
-			// // cout << "dfzdfb:" << endl << dfzdfb << endl << endl;
-			// cout << "dcdfw:"  << endl << dcdfw  << endl << endl;
-			// // cout << "dcdfb:"  << endl << dcdfb  << endl << endl;
-			// cout << "dfzdm:"  << endl << dfzdm  << endl << endl;
-			// cout << "dmda:"   << endl << dmda   << endl << endl;
-			// cout << "dadz:"   << endl << dadz   << endl << endl;
-			// cout << "dcdz:"   << endl << dcdz   << endl << endl;
-			// cout << "dzdw:"   << endl << dzdw   << endl << endl;
-			// // cout << "dzdb:"   << endl << dzdb   << endl << endl;
-			// cout << "dcdw:"   << endl << dcdw   << endl << endl;
-			// // cout << "dcdb:"   << endl << dcdb   << endl << endl;
-			// for (I i = 0; i < dmda.cols(); ++i)
-			// 	cout << dmda.col(i).sum() << " "; // will sum to at most one
-			// cout << endl << endl;
-			// for (I i = 0; i < dmda.rows(); ++i)
-			// 	cout << dmda.row(i).sum() << " "; // will sum to one
-			// cout << endl;
-		};
 
 		// TODO recompute all gradients on paper
 
@@ -155,22 +105,20 @@ class cnn {
 			}
 
 			// Compute the pool and also the derivative of the pooling wrt its inputs
+			m.setZero();
 			for (I k = 0; k < nf; ++k) {
 				dmda[k].setZero();
 				for (I i = 0; i < ps; ++i) {
 					I row,col;
 					for (I j = 0; j < ps; ++j) {
-						m[k](i*ps+j,0) = a[k].block<pws,pws>(pws*i,pws*j).maxCoeff(&row, &col);
-						dmda[k](i*ps+j,(i*pws+row)*as+j*pws+col) = 1;
+						m(i*ps+j) += a[k].block<pws,pws>(pws*i,pws*j).maxCoeff(&row, &col);
+						dmda[k](i*ps + j, (i*pws + row)*as + j * pws + col) = 1;
 					}
 				}
 			}
 
 			// Compute the fully connected network
-			fz.setZero();
-			for (I i = 0; i < nf; ++i)
-				fz += fw * m[i];
-			fz += fb;
+			fz = fw * m + fb;
 			fa = f(fz);
 		};
 
@@ -181,117 +129,88 @@ class cnn {
 			double g;
 
 			//dcdb
-			b[3] += eps;
+			w[3](2,3) += eps;
 			forward();
 			cost1 = c(fa,y);
-			b[3] -= 2.*eps;
+			w[3](2,3) -= 2.*eps;
 			forward();
 			cost2 = c(fa,y);
-			b[3] += eps;
+			w[3](2,3) += eps;
 			g = (cost1-cost2)/(2*eps);
-			cout << "dcdb   : " << dcdb[3] << endl;
+			cout << "dcdw   : " << dcdw[3](0,2*fs+3) << endl;
 			cout << "diffquo: " << g << endl;
 		};
 
+		I e = 0;
+		const R u = .02;
 		cout.precision(20);
-		auto start = std::chrono::steady_clock::now();
-		while (++e < 1000) {
+		while (++e) {
+			// COMPUTE NETWORK
+			I example = e % train.labels.size();
+			x = View<is, is>(train.examples.col(example).data());
+			y.setZero();
+			y(train.labels(example)) = 1;
+			forward();
 
-			for (I T = 0; T < 13; ++T) {
-				I example = rand() % train.labels.size();
-				// Copy data from test matrix to network input matrix
-				for (I i = 0; i < is; ++i)
-					x.row(i) = train.examples.block<is,1>(i*is,example).transpose();
-				y.setZero();
-				y(train.labels(example)) = 1;
+			// FULLY CONNECTED LAYER DERIVATIVE
+			dcdfa = dc(fa, y).transpose();
+			for (I i = 0; i < os; ++i) // the ith row of fz is sensitive to elements in the ith row of fw
+				for (I j = 0; j < ps*ps; ++j) // but not to elements in other rows of fw
+					dfzdfw(i,j + i * ps*ps) = m(j);
+			dcdfz = dcdfa; // = dcdfa * dfadfz // dfadfz cancelled by dc
+			dcdfw = dcdfz * dfzdfw;
+			dcdfb = dcdfz; // = dcdfz * dfzdfb // dfzdfb == identity
+			dfzdm = fw;
+			dcdm = dcdfz * dfzdm;
 
-				forward();
+			// MAX POOL LAYER DERIVATIVE
+			// dmda computed during forward pass
 
-
-
-
-				// Compute jacobians
-
-
-
-				// FULLY CONNECTED LAYER DERIVATIVE
-				dcdfa = dc(fa, y).transpose();
-				// dfadfz = df( fa ).asDiagonal();
-				dfzdfw.setZero();
-				for (I k = 0; k < nf; ++k)
-					for (I i = 0; i < os; ++i) // the ith row of fz is sensitive to elements in the ith row of fw
-						for (I j = 0; j < ps*ps; ++j) // but not to elements in other rows of fw
-							dfzdfw(i,j + i * ps*ps) += m[k](j,0);
-				// dfzdfb.setIdentity(); // already computed
-				// dcdfz = dcdfa * dfadfz; // dfadfz cancelled by dc
-				dcdfz = dcdfa;
-				dcdfw = dcdfz * dfzdfw; // This could be reduced to (dcdfz.T)*(m.T) which would produce a dcdfw that has the same size as fw
-				dcdfb = dcdfz * dfzdfb;
-				dfzdm = fw;
-
-
-
-
-				// MAX POOL LAYER DERIVATIVE
-				// dmda[k] computed during forward pass
-
-
-
-
-				// CONVOLUTIONAL LAYER DERIVATIVE
-				for (I k = 0; k < nf; ++k)
-					a[k] = df(a[k]);
-				for (I k = 0; k < nf; ++k)
-					for (I i = 0; i < as; ++i)
-						dadz[k].diagonal().transpose().block<1,as>(0,i*as) = a[k].row(i);
-				for (I i = 0; i < as*as; ++i) { // Build the jacobian of the convolution wrt the filter parameters
-					I z_row = i / as;           // Each filter has the same input so dzdw is the same for each filter
-					I z_col = i % as;
-					const auto &submat = x.block<fs, fs>(z_row, z_col);
-					for (I j = 0; j < fs*fs; ++j) {
-						I w_row = j / fs;
-						I w_col = j % fs;
-						dzdw(i, j) = submat(w_row, w_col);
-					}
+			// CONVOLUTIONAL LAYER DERIVATIVE
+			for (I k = 0; k < nf; ++k)
+				a[k] = df(a[k]);
+			for (I k = 0; k < nf; ++k)
+				for (I i = 0; i < as; ++i)
+					dadz[k].diagonal().transpose().block<1,as>(0,i*as) = a[k].row(i);
+			for (I i = 0; i < as*as; ++i) { // Build the jacobian of the convolution wrt the filter parameters
+				I z_row = i / as;           // Each filter has the same input so dzdw is the same for each filter
+				I z_col = i % as;
+				const auto &submat = x.block<fs, fs>(z_row, z_col);
+				for (I j = 0; j < fs*fs; ++j) {
+					I w_row = j / fs;
+					I w_col = j % fs;
+					dzdw(i, j) = submat(w_row, w_col);
 				}
-				// dzdb.setOnes(); // already computed
-				for (I k = 0; k < nf; ++k) {
-					dcdz[k] = dcdfz * dfzdm * dmda[k] * dadz[k];
-					dcdw[k] = dcdz[k] * dzdw;
-					dcdb[k] = dcdz[k] * dzdb;
-				}
-
-
-
-
-				// Compute gradient check
-				#ifdef GC
-				if (T == 0 && e % 50==0) {
-					grad_check();
-				}
-				#endif
-
-
-
-				// UPDATE WEIGHTS
-				for (I i = 0; i < os; ++i)
-					fw.row(i) += -u * dcdfw.block<1,ps*ps>(0,i*ps*ps);
-				fb += -u * dcdfb.transpose();
-
-				for (I k = 0; k < nf; ++k) {
-					for (I i = 0; i < fs; ++i)
-						w[k].row(i) += -u * dcdw[k].block<1,fs>(0,i*fs);
-					b[k] += -u * dcdb[k];
-				}
-
+			}
+			for (I k = 0; k < nf; ++k) {
+				dcdz[k] = dcdm * dmda[k] * dadz[k];
+				dcdw[k] = dcdz[k] * dzdw;
+				dcdb[k] = dcdz[k].sum(); // dzdb == [as*as, 1] vector of ones
 			}
 
-			if (e % 50 == 0) {
+			// GRADIENT CHECK
+			#ifdef GC
+			if (e % 1000==0) {
+				grad_check();
+			}
+			#endif
+
+			// UPDATE WEIGHTS
+			for (I i = 0; i < os; ++i)
+				fw.row(i) += (-u) * dcdfw.block<1,ps*ps>(0,i*ps*ps);
+			fb += (-u) * dcdfb.transpose();
+			for (I k = 0; k < nf; ++k) {
+				for (I i = 0; i < fs; ++i)
+					w[k].row(i) += (-u) * dcdw[k].block<1,fs>(0,i*fs);
+				b[k] += (-u) * dcdb[k];
+			}
+
+			// ACCURACY CHECK
+			if (e % 1000 == 0) {
 				double acc = 0.;
 				I itters = test.labels.size();
 				for (I example = 0; example < itters; ++example) {
-					for (I i = 0; i < is; ++i)
-						x.row(i) = test.examples.block<is,1>(i*is,example).transpose();
+					x = View<is, is>(test.examples.col(example).data());
 					forward();
 					I indx;
 					fa.maxCoeff(&indx);
@@ -299,15 +218,10 @@ class cnn {
 						acc += 1.;
 				}
 				acc /= R(itters);
-				cout << "Epoch " << e << endl;
+				cout << "Itter " << e << endl;
 				cout << "Accuracy: " << acc << endl;
 			}
 		}
-		cout << (std::chrono::steady_clock::now() - start).count() / 1e9 << endl;
-		LOG();
-		I XX;
-		std::cin >> XX;
-		cout << XX * 3 << endl;
 	}
 };
 

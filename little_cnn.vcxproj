@@ -105,6 +105,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>C:\Users\gazin\Programming\libs\eigen-git-mirror\Eigen;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>MaxSpeed</Optimization>
+      <LanguageStandard>stdcpp14</LanguageStandard>
     </ClCompile>
     <Link>
       <StackReserveSize>100000000</StackReserveSize>
@@ -126,7 +127,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Data.h" />
-    <ClInclude Include="header.h" />
+    <ClInclude Include="common.h" />
+    <ClInclude Include="FCLayer.h" />
     <ClInclude Include="mnist_loader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

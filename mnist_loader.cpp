@@ -1,16 +1,16 @@
-#include <Eigen>
-#include "mnist_loader.h"
-using namespace Eigen;
-
 #include <iostream>
 using std::cout; using std::endl;
+#include <iomanip>
 #include <fstream>
 #include <iterator>
 #include <algorithm>
-
+#include <vector>
 using std::vector;
 
-// #include <png++/png.hpp>
+#include <Eigen>
+using namespace Eigen;
+
+#include "mnist_loader.h"
 
 /* clang-format off
 TRAINING SET IMAGE FILE (train-images.idx3-ubyte):
@@ -93,16 +93,4 @@ void load_data(Data& train_data, Data& test_data, Data& validation_data) {
 	test_data.labels = VectorXi::Zero(10000);
 	for (int i = 0; i < 10000; ++i)
 		test_data.labels(i) = file[i];
-
-	// Test image load
-	// png::image< png::rgb_pixel > image(28, 28);
-	// for (size_t y = 0; y < image.get_height(); ++y)
-	// {
-	// 	for (size_t x = 0; x < image.get_width(); ++x)
-	// 	{
-	// 		unsigned char p = 255 - file[x + y * 28 + 784*10000];
-	// 		image[y][x] = png::rgb_pixel(p, p, p);
-	// 	}
-	// }
-	// image.write("rgb.png");
 }
